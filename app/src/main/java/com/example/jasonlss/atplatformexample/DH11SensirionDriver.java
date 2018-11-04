@@ -11,7 +11,6 @@ import java.io.IOException;
 
 public class DH11SensirionDriver implements AutoCloseable {
 
-    private static final String TAG = DH11SensirionDriver.class.getSimpleName();
     private static final int DRIVER_VERSION = 1;
     private static final String DRIVER_NAME = "DH-11 Sensirion Sensor";
 

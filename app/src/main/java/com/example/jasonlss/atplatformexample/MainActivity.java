@@ -1,8 +1,6 @@
 package com.example.jasonlss.atplatformexample;
 
-import android.Manifest;
 import android.app.Activity;
-import android.content.pm.PackageManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -21,6 +19,7 @@ import com.google.android.things.pio.Pwm;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class MainActivity extends Activity  {
     private static final String TAG = MainActivity.class.getSimpleName();
@@ -42,32 +41,61 @@ public class MainActivity extends Activity  {
     private Gpio InfraredSensor;//红外传感器
     private Pwm mPwm;
     private Camera mCamera;//相机
-    private HandlerThread mCameraThread;
+    private HandlerThread mBackgroundThread;
+    private Handler mBackgroundHandler;
     private Handler LoopHandler = new Handler();
-
+    private AtomicBoolean mReady = new AtomicBoolean(false);
     private SensorManager mSensorManager;
-    private Hcsr04UltrasonicDriver hcsr04UltrasonicDriver;
-    private DH11SensirionDriver dh11SensirionDriver;
 
-    private class mDynamicSensorCallback extends SensorManager.DynamicSensorCallback {
-        @Override
-        public void onDynamicSensorConnected(Sensor sensor) {
-            if (sensor.getType() == Sensor.TYPE_AMBIENT_TEMPERATURE){
-                mSensorManager.registerListener(mTemperatureListener, sensor, SensorManager.SENSOR_DELAY_NORMAL);
-            }
-            else if (sensor.getType() == Sensor.TYPE_PROXIMITY)
-            {
-                mSensorManager.registerListener(mDistanceListener, sensor, SensorManager.SENSOR_DELAY_NORMAL);
-            }
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        Log.d(TAG, "Activity created.");
+        PeripheralManager Manager = PeripheralManager.getInstance();
+        try{
+            //gpio init
+            mGpio = Manager.openGpio(BUTTON_PIN_NAME);
+            mGpio.setDirection(Gpio.DIRECTION_IN);
+            mGpio.setEdgeTriggerType(Gpio.EDGE_FALLING);
+            mGpio.registerGpioCallback(mGpioCallback);
 
+            LEDGpio=Manager.openGpio(LED_PIN_NAME);
+            LEDGpio.setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW);
+            LEDGpio.setActiveType(Gpio.ACTIVE_LOW);
+
+            InfraredSensor = Manager.openGpio(InfraredSensor_NAME);
+            InfraredSensor.setDirection(Gpio.DIRECTION_IN);
+            InfraredSensor.setActiveType(Gpio.ACTIVE_HIGH);
+            InfraredSensor.setEdgeTriggerType(Gpio.EDGE_BOTH);
+            InfraredSensor.registerGpioCallback(InfraredSensorCallback);
+            //sensor init
+            mSensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+            mSensorManager.registerDynamicSensorCallback(new mDynamicSensorCallback());
+            Hcsr04UltrasonicDriver hcsr04UltrasonicDriver = new Hcsr04UltrasonicDriver(Trig_NAME, Echo_NAME);
+            hcsr04UltrasonicDriver.register();
+            DH11SensirionDriver dh11SensirionDriver = new DH11SensirionDriver(Sensirion_NAME);
+            dh11SensirionDriver.register();
+            //loop init
+            LoopHandler.post(looper);
+        }catch (IOException e) {
+            Log.e(TAG, "Unable to on GPIO", e);
         }
-
-        @Override
-        public void onDynamicSensorDisconnected(Sensor sensor) {
-            super.onDynamicSensorDisconnected(sensor);
+        try {
+            //PWM init
+            mPwm = Manager.openPwm(PWM_NAME);
+            initializePwm(mPwm);
+        } catch (IOException e) {
+            Log.w(TAG, "Unable to on PWM", e);
         }
+        CameraInit();
     }
 
+    private void CameraInit(){
+        mBackgroundThread = new HandlerThread("BackgroundThread");
+        mBackgroundThread.start();
+        mBackgroundHandler = new Handler(mBackgroundThread.getLooper());
+        mBackgroundHandler.post(mInitializeOnBackground);
+    }
 
     private SensorEventListener mTemperatureListener = new SensorEventListener() {
         @Override
@@ -92,6 +120,26 @@ public class MainActivity extends Activity  {
             Log.d(TAG, "accuracy changed: " + accuracy);
         }
     };
+
+    private class mDynamicSensorCallback extends SensorManager.DynamicSensorCallback {
+        @Override
+        public void onDynamicSensorConnected(Sensor sensor) {
+            if (sensor.getType() == Sensor.TYPE_AMBIENT_TEMPERATURE){
+                mSensorManager.registerListener(mTemperatureListener, sensor, SensorManager.SENSOR_DELAY_NORMAL);
+            }
+            else if (sensor.getType() == Sensor.TYPE_PROXIMITY)
+            {
+                mSensorManager.registerListener(mDistanceListener, sensor, SensorManager.SENSOR_DELAY_NORMAL);
+            }
+
+        }
+
+        @Override
+        public void onDynamicSensorDisconnected(Sensor sensor) {
+            super.onDynamicSensorDisconnected(sensor);
+        }
+    }
+
 
     private final GpioCallback InfraredSensorCallback =new GpioCallback() {
         @Override
@@ -135,6 +183,23 @@ public class MainActivity extends Activity  {
         }
     };
 
+    private Runnable mInitializeOnBackground = new Runnable() {
+        @Override
+        public void run() {
+            mCamera = Camera.getInstance();
+            mCamera.initializeCamera(MainActivity.this,
+                    mBackgroundHandler, mOnImageAvailableListener);
+            setReady(true);
+        }
+    };
+
+    private Runnable mBackgroundClickHandler = new Runnable() {
+        @Override
+        public void run() {
+            mCamera.takePicture();
+        }
+    };
+
     private Runnable looper = new Runnable() {//主任务循环（1ms
         @Override
         public void run() {
@@ -144,11 +209,11 @@ public class MainActivity extends Activity  {
                 {
                     TimeTicket=0;
                 }
-                if(TimeTicket%10000==0)
+                if(TimeTicket%1000==0)
                 {
-                    mCamera.takePicture();
+                    startImageCapture();
                 }
-               if(TimeTicket%2000==0)
+               if(TimeTicket%200==0)
                {
                    mState = !mState;
                    LEDGpio.setValue(mState);
@@ -169,6 +234,21 @@ public class MainActivity extends Activity  {
             }
         }
     };
+
+    /**
+     * Verify and initiate a new image capture
+     */
+    private void startImageCapture() {
+        boolean isReady = mReady.get();
+        Log.d(TAG, "Ready for another capture? " + isReady);
+        if (isReady) {
+            setReady(false);
+            mBackgroundHandler.post(mBackgroundClickHandler);
+        } else {
+            Log.i(TAG, "Sorry, processing hasn't finished. Try again in a few seconds");
+        }
+    }
+
     private ImageReader.OnImageAvailableListener mOnImageAvailableListener =
             new ImageReader.OnImageAvailableListener(){
         @Override
@@ -183,65 +263,10 @@ public class MainActivity extends Activity  {
         }
     };
 
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        Log.d(TAG, "Activity created.");
-        PeripheralManager Manager = PeripheralManager.getInstance();
-        try{
-            //gpio init
-            mGpio = Manager.openGpio(BUTTON_PIN_NAME);
-            mGpio.setDirection(Gpio.DIRECTION_IN);
-            mGpio.setEdgeTriggerType(Gpio.EDGE_FALLING);
-            mGpio.registerGpioCallback(mGpioCallback);
-            LEDGpio=Manager.openGpio(LED_PIN_NAME);
-            LEDGpio.setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW);
-            LEDGpio.setActiveType(Gpio.ACTIVE_LOW);
-            InfraredSensor = Manager.openGpio(InfraredSensor_NAME);
-            InfraredSensor.setDirection(Gpio.DIRECTION_IN);
-            InfraredSensor.setActiveType(Gpio.ACTIVE_HIGH);
-            InfraredSensor.setEdgeTriggerType(Gpio.EDGE_BOTH);
-            InfraredSensor.registerGpioCallback(InfraredSensorCallback);
-
-            mSensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
-            mSensorManager.registerDynamicSensorCallback(new mDynamicSensorCallback());
-
-            hcsr04UltrasonicDriver = new Hcsr04UltrasonicDriver(Trig_NAME, Echo_NAME);
-            hcsr04UltrasonicDriver.register();
-
-            dh11SensirionDriver=new DH11SensirionDriver(Sensirion_NAME);
-            dh11SensirionDriver.register();
-
-            LoopHandler.post(looper);
-        }catch (IOException e) {
-            Log.e(TAG, "Unable to on GPIO", e);
-        }
-
-        try {
-            //PWM init
-            mPwm = Manager.openPwm(PWM_NAME);
-            initializePwm(mPwm);
-        } catch (IOException e) {
-            Log.w(TAG, "Unable to on PWM", e);
-        }
-
-        CameraInit();
-
+    private void setReady(boolean ready) {
+        mReady.set(ready);
     }
 
-    private void CameraInit(){
-        if (checkSelfPermission(Manifest.permission.CAMERA)
-                != PackageManager.PERMISSION_GRANTED) {
-            // A problem occurred auto-granting the permission
-            Log.e(TAG, "No permission");
-            return;
-        }
-        mCameraThread = new HandlerThread("CameraBackground");
-        mCameraThread.start();
-        Handler mCameraHandler = new Handler(mCameraThread.getLooper());
-        mCamera = Camera.getInstance();
-        mCamera.initializeCamera(this, mCameraHandler, mOnImageAvailableListener);
-    }
 
     private void setgpioValue(Gpio GPIOS,boolean value) {
         try {
@@ -269,6 +294,7 @@ public class MainActivity extends Activity  {
     private void onPictureTaken(final byte[] imageBytes) {
         if (imageBytes != null) {
             Log.e(TAG, "image find");
+            setReady(true);
         }
     }
 
@@ -311,8 +337,18 @@ public class MainActivity extends Activity  {
                 Log.w(TAG, "Unable to close InfraredSensor", e);
             }
         }
-        mCamera.shutDown();
-        mCameraThread.quitSafely();
+        try {
+            if (mBackgroundThread != null) mBackgroundThread.quit();
+        } catch (Throwable t) {
+            // close quietly
+        }
+        mBackgroundThread = null;
+        mBackgroundHandler = null;
+        try {
+            if (mCamera != null) mCamera.shutDown();
+        } catch (Throwable t) {
+            // close quietly
+        }
     }
 
 }

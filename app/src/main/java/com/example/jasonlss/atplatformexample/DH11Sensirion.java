@@ -30,8 +30,8 @@ public class DH11Sensirion implements AutoCloseable {
                 busyWaitMicros(20);
                 mGpio.setDirection(Gpio.DIRECTION_IN);
                 mGpio.setEdgeTriggerType(Gpio.EDGE_BOTH);
-                
-                handler.postDelayed(startTrigger, 10);
+
+                handler.postDelayed(startTrigger, 100);
             } catch (IOException e) {
                 e.printStackTrace();
             }

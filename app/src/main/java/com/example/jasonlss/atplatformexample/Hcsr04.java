@@ -16,7 +16,6 @@ public class Hcsr04 implements AutoCloseable {
     private Handler handler = new Handler();
     private long startTime, ellapsedTime;
     private float distanceInCm;
-    private long LongTime;
     private boolean flag=false;
     private Runnable startTrigger = new Runnable() {
         @Override
@@ -25,11 +24,11 @@ public class Hcsr04 implements AutoCloseable {
                 trigGpio.setValue(!trigGpio.getValue());
                 busyWaitMicros(pauseInMicro);
                 trigGpio.setValue(!trigGpio.getValue());
-                LongTime=System.nanoTime();
-                while (!echoGpio.getValue()&&flag==false)
+                long longTime = System.nanoTime();
+                while (!echoGpio.getValue()&& !flag)
                 {
                     startTime = System.nanoTime();
-                    if(startTime-LongTime>1000000)
+                    if(startTime- longTime >1000000)
                         flag=true;
                 }
                 if(!flag)
@@ -41,10 +40,10 @@ public class Hcsr04 implements AutoCloseable {
                 }
                 else
                 {
-                    Log.e("error:", "timeout");
+                    Log.e(TAG, "timeout");
                     flag=false;
                 }
-                handler.postDelayed(startTrigger, 10);
+                handler.postDelayed(startTrigger, 100);
             } catch (IOException e) {
                 e.printStackTrace();
             }

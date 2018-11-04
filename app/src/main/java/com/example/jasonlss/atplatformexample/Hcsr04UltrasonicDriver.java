@@ -11,7 +11,6 @@ import java.io.IOException;
 
 public class Hcsr04UltrasonicDriver implements AutoCloseable {
 
-    private static final String TAG = Hcsr04UltrasonicDriver.class.getSimpleName();
     private static final int DRIVER_VERSION = 1;
     private static final String DRIVER_NAME = "HC-SR04 Ultrasonic Sensor";
 
@@ -38,7 +37,7 @@ public class Hcsr04UltrasonicDriver implements AutoCloseable {
     }
 
     @Override
-    public void close() throws Exception {
+    public void close() {
         unregister();
         if (device != null) {
             try {
