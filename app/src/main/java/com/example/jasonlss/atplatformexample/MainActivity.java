@@ -26,21 +26,24 @@ public class MainActivity extends Activity  {
     private static final String BUTTON_PIN_NAME = "BCM26"; // GPIO 4/5/6/12/16/17/22/23/24/25/26/27
     private static final String LED_PIN_NAME = "BCM5"; // GPIO 4/5/6/12/16/17/22/23/24/25/26/27
     private static final String PWM_NAME ="PWM1";//pwm1-13 PWM0-18
-    private static final String InfraredSensor_NAME ="BCM16";
-    private static final String Trig_NAME ="BCM6";
-    private static final String Echo_NAME ="BCM12";
-    private static final String Sensirion_NAME ="BCM25";
+    private static final String InfraredSensor_NAME ="BCM16";//人体红外传感器
+    private static final String Trig_NAME ="BCM6";//超声波传感器trig
+    private static final String Echo_NAME ="BCM12";//超声波传感器echo
+    private static final String Sensirion_NAME ="BCM25";//温湿度传感器
+    private static final String Smoke_NAME="BCM4";//烟雾传感器
 
     private float Distance;
     private float Temperature;
     private float Humidity;
     private long TimeTicket=0;
     private boolean mState = false;
-    private boolean humanState=false;
+    private boolean humanState=false;//红外传感器转态
+    private boolean smokeState=false;//烟雾传感器状态
 
     private Gpio mGpio;//开关
     private Gpio LEDGpio;//LED
     private Gpio InfraredSensor;//红外传感器
+    private Gpio SmokeSensor;//烟雾传感器
     private Pwm mPwm;
     private Camera mCamera;//相机
     private HandlerThread mBackgroundThread;
@@ -70,6 +73,14 @@ public class MainActivity extends Activity  {
             InfraredSensor.setActiveType(Gpio.ACTIVE_HIGH);
             InfraredSensor.setEdgeTriggerType(Gpio.EDGE_BOTH);
             InfraredSensor.registerGpioCallback(InfraredSensorCallback);
+
+            SmokeSensor=Manager.openGpio(Smoke_NAME);
+            SmokeSensor.setDirection(Gpio.DIRECTION_IN);
+            SmokeSensor.setActiveType(Gpio.ACTIVE_HIGH);
+            SmokeSensor.setEdgeTriggerType(Gpio.EDGE_BOTH);
+            SmokeSensor.registerGpioCallback(SmokeSensorSensorCallback);
+
+
             //sensor init
             mSensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
             mSensorManager.registerDynamicSensorCallback(new mDynamicSensorCallback());
@@ -142,6 +153,28 @@ public class MainActivity extends Activity  {
         }
     }
 
+    private final GpioCallback SmokeSensorSensorCallback =new GpioCallback() {
+        @Override
+        public boolean onGpioEdge(Gpio gpio) {
+            try {
+                if (gpio.getValue()) {
+                    Log.e("有烟雾", gpio.getValue()+ "");
+                    smokeState=true;
+                } else {
+                    Log.e("没有烟雾", gpio.getValue() + "");
+                    smokeState=false;
+                }
+            } catch (IOException e) {
+                Log.i(TAG, "SmokeSensor not in used");
+            }
+            return true;
+        }
+
+        @Override
+        public void onGpioError(Gpio gpio, int error) {
+            Log.w(TAG, gpio + ": Error event " + error);
+        }
+    };
 
     private final GpioCallback InfraredSensorCallback =new GpioCallback() {
         @Override
@@ -238,6 +271,14 @@ public class MainActivity extends Activity  {
                     {
                         Log.e("人体红外传感器：", "没人");
                     }
+                    if(smokeState)
+                    {
+                        Log.e("烟雾传感器：", "有烟雾");
+                    }
+                    else
+                    {
+                        Log.e("烟雾传感器：", "没烟雾");
+                    }
 
                }
                 LoopHandler.postDelayed(looper, 1);
@@ -279,6 +320,21 @@ public class MainActivity extends Activity  {
         mReady.set(ready);
     }
 
+    private void OnPwm(){
+        try {
+            mPwm.setEnabled(true);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void OffPwm(){
+        try {
+            mPwm.setEnabled(false);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 
     private void setgpioValue(Gpio GPIOS,boolean value) {
         try {
@@ -347,6 +403,15 @@ public class MainActivity extends Activity  {
                 InfraredSensor = null;
             } catch (IOException e) {
                 Log.w(TAG, "Unable to close InfraredSensor", e);
+            }
+        }
+        if (SmokeSensor != null) {
+            SmokeSensor.unregisterGpioCallback(SmokeSensorSensorCallback);
+            try {
+                SmokeSensor.close();
+                SmokeSensor = null;
+            } catch (IOException e) {
+                Log.w(TAG, "Unable to close SmokeSensor", e);
             }
         }
         try {

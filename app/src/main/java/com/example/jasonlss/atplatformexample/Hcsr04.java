@@ -37,6 +37,8 @@ public class Hcsr04 implements AutoCloseable {
                         ellapsedTime = System.nanoTime() - startTime;
                     ellapsedTime = TimeUnit.NANOSECONDS.toMicros(ellapsedTime);
                     distanceInCm = ellapsedTime / 58;
+                    if(distanceInCm>1500)
+                        distanceInCm=0;
                 }
                 else
                 {
