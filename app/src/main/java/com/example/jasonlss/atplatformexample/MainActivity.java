@@ -30,12 +30,14 @@ public class MainActivity extends Activity  {
     private static final String Trig_NAME ="BCM6";
     private static final String Echo_NAME ="BCM12";
     private static final String Sensirion_NAME ="BCM25";
+
     private float Distance;
     private float Temperature;
     private float Humidity;
-
-    private boolean mState = false;
     private long TimeTicket=0;
+    private boolean mState = false;
+    private boolean humanState=false;
+
     private Gpio mGpio;//开关
     private Gpio LEDGpio;//LED
     private Gpio InfraredSensor;//红外传感器
@@ -146,9 +148,11 @@ public class MainActivity extends Activity  {
         public boolean onGpioEdge(Gpio gpio) {
             try {
                 if (gpio.getValue()) {
-                    Log.e("有人来了", gpio.getValue() + ":1111111111111");
+                    Log.e("有人来了", gpio.getValue()+ "");
+                    humanState=true;
                 } else {
-                    Log.e("没有人", gpio.getValue() + ":222222222222");
+                    Log.e("没有人", gpio.getValue() + "");
+                    humanState=false;
                 }
             } catch (IOException e) {
                 Log.i(TAG, "InfraredSensor not in used");
@@ -218,13 +222,21 @@ public class MainActivity extends Activity  {
                    mState = !mState;
                    LEDGpio.setValue(mState);
                }
-               if(TimeTicket%100==0){
+               if(TimeTicket%2000==0){
                     if(Distance==0)
                     {
                         Log.e("距离：", "异常距离");
                     }else
                     {
                         Log.e("距离", Distance+"CM"+Temperature+Humidity);
+                    }
+                    if(humanState)
+                    {
+                        Log.e("人体红外传感器：", "有人");
+                    }
+                    else
+                    {
+                        Log.e("人体红外传感器：", "没人");
                     }
 
                }
