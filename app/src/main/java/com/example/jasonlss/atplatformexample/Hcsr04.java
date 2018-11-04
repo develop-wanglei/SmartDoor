@@ -16,6 +16,8 @@ public class Hcsr04 implements AutoCloseable {
     private Handler handler = new Handler();
     private long startTime, ellapsedTime;
     private float distanceInCm;
+    private long LongTime;
+    private boolean flag=false;
     private Runnable startTrigger = new Runnable() {
         @Override
         public void run() {
@@ -23,14 +25,26 @@ public class Hcsr04 implements AutoCloseable {
                 trigGpio.setValue(!trigGpio.getValue());
                 busyWaitMicros(pauseInMicro);
                 trigGpio.setValue(!trigGpio.getValue());
-                while (!echoGpio.getValue())
+                LongTime=System.nanoTime();
+                while (!echoGpio.getValue()&&flag==false)
+                {
                     startTime = System.nanoTime();
-                while (echoGpio.getValue())
-                    ellapsedTime = System.nanoTime() - startTime;
-                ellapsedTime = TimeUnit.NANOSECONDS.toMicros(ellapsedTime);
-                distanceInCm = ellapsedTime / 58;
-                Log.i(TAG,"distanceInCm = " + distanceInCm);
-                handler.postDelayed(startTrigger, 1000);
+                    if(startTime-LongTime>1000000)
+                        flag=true;
+                }
+                if(!flag)
+                {
+                    while (echoGpio.getValue())
+                        ellapsedTime = System.nanoTime() - startTime;
+                    ellapsedTime = TimeUnit.NANOSECONDS.toMicros(ellapsedTime);
+                    distanceInCm = ellapsedTime / 58;
+                }
+                else
+                {
+                    Log.e("error:", "timeout");
+                    flag=false;
+                }
+                handler.postDelayed(startTrigger, 10);
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -78,6 +92,7 @@ public class Hcsr04 implements AutoCloseable {
             e.printStackTrace();
         }
     }
+
 
     public float[] getProximityDistance() {
         return new float[]{distanceInCm};
