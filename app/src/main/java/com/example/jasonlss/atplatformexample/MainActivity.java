@@ -11,7 +11,12 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Log;
+import android.view.View;
+import android.widget.Button;
 
+import com.avos.avoscloud.AVException;
+import com.avos.avoscloud.AVObject;
+import com.avos.avoscloud.SaveCallback;
 import com.google.android.things.pio.Gpio;
 import com.google.android.things.pio.GpioCallback;
 import com.google.android.things.pio.PeripheralManager;
@@ -25,6 +30,7 @@ public class MainActivity extends Activity  {
     private static final String TAG = MainActivity.class.getSimpleName();
     private static final String BUTTON_PIN_NAME = "BCM26"; // GPIO 4/5/6/12/16/17/22/23/24/25/26/27
     private static final String LED_PIN_NAME = "BCM5"; // GPIO 4/5/6/12/16/17/22/23/24/25/26/27
+    private static final String LED_SMART = "BCM17";
     private static final String PWM_NAME ="PWM1";//pwm1-13 PWM0-18
     private static final String InfraredSensor_NAME ="BCM16";//人体红外传感器
     private static final String Trig_NAME ="BCM6";//超声波传感器trig
@@ -42,6 +48,7 @@ public class MainActivity extends Activity  {
 
     private Gpio mGpio;//开关
     private Gpio LEDGpio;//LED
+    private Gpio SMART_LEDGpio;//SMART_LED
     private Gpio InfraredSensor;//红外传感器
     private Gpio SmokeSensor;//烟雾传感器
     private Pwm mPwm;
@@ -51,12 +58,23 @@ public class MainActivity extends Activity  {
     private Handler LoopHandler = new Handler();
     private AtomicBoolean mReady = new AtomicBoolean(false);
     private SensorManager mSensorManager;
+    private  ScanDatabase SMART_LED_SCAN = new ScanDatabase("LEDS","5bdea83a9f545400667a5a6e");
+
+
+    //UI
+    Button Onbutton;
+    Button Offbutton;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Log.d(TAG, "Activity created.");
         PeripheralManager Manager = PeripheralManager.getInstance();
+        setContentView(R.layout.mainlayout);
+        Onbutton=findViewById(R.id.button1);
+        Offbutton=findViewById(R.id.button2);
+
+
         try{
             //gpio init
             mGpio = Manager.openGpio(BUTTON_PIN_NAME);
@@ -67,6 +85,10 @@ public class MainActivity extends Activity  {
             LEDGpio=Manager.openGpio(LED_PIN_NAME);
             LEDGpio.setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW);
             LEDGpio.setActiveType(Gpio.ACTIVE_LOW);
+
+            SMART_LEDGpio=Manager.openGpio(LED_SMART);
+            SMART_LEDGpio.setActiveType(Gpio.ACTIVE_LOW);
+            SMART_LEDGpio.setDirection(Gpio.DIRECTION_OUT_INITIALLY_LOW);
 
             InfraredSensor = Manager.openGpio(InfraredSensor_NAME);
             InfraredSensor.setDirection(Gpio.DIRECTION_IN);
@@ -90,6 +112,7 @@ public class MainActivity extends Activity  {
             dh11SensirionDriver.register();
             //loop init
             LoopHandler.post(looper);
+            //looper.run();
         }catch (IOException e) {
             Log.e(TAG, "Unable to on GPIO", e);
         }
@@ -102,6 +125,27 @@ public class MainActivity extends Activity  {
         }
         CameraInit();
     }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        Onbutton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SMART_LED_SCAN.Turn_ON_Local();
+
+            }
+        });
+        Offbutton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                SMART_LED_SCAN.Turn_OFF_Local();;
+            }
+        });
+    }
+
+
+
 
     private void CameraInit(){
         mBackgroundThread = new HandlerThread("BackgroundThread");
@@ -281,6 +325,9 @@ public class MainActivity extends Activity  {
                     }
 
                }
+                if (TimeTicket % 1000 == 0) {
+                    setgpioValue(SMART_LEDGpio, SMART_LED_SCAN.Led_state);
+                }
                 LoopHandler.postDelayed(looper, 1);
             } catch (IOException e) {
                 Log.e(TAG, "Error on PeripheralIO API", e);
